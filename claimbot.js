@@ -137,7 +137,7 @@ async function fetchTable(account, table, scope, tableIndex, index = 0) {
 
 		return data.rows;
 	} catch (error) {
-		return await fetchTable(account, table, tableIndex, index + 1);
+		return await fetchTable(account, table, scope, tableIndex, index + 1);
 	}
 }
 
