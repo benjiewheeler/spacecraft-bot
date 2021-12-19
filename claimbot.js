@@ -32,6 +32,11 @@ const Configs = {
 	autoWithdraw: false,
 	withdrawThresholds: [],
 	maxWithdraw: [],
+
+	autoDeposit: false,
+	depositThresholds: [],
+	maxDeposit: [],
+
 	WAXEndpoints: [...WAX_ENDPOINTS],
 };
 
@@ -107,7 +112,7 @@ async function transact(config) {
 	}
 }
 
-async function fetchTable(account, table, scope, tableIndex, index = 0) {
+async function fetchTable(contract, table, scope, bounds, tableIndex, index = 0) {
 	if (index >= Configs.WAXEndpoints.length) {
 		return [];
 	}
@@ -119,14 +124,14 @@ async function fetchTable(account, table, scope, tableIndex, index = 0) {
 		const data = await Promise.race([
 			rpc.get_table_rows({
 				json: true,
-				code: "spacecraftxc",
+				code: contract,
 				scope: scope,
 				table: table,
-				lower_bound: account,
-				upper_bound: account,
+				lower_bound: bounds,
+				upper_bound: bounds,
 				index_position: tableIndex,
 				key_type: "i64",
-				limit: 1000,
+				limit: 100,
 			}),
 			waitFor(5).then(() => null),
 		]);
@@ -137,17 +142,17 @@ async function fetchTable(account, table, scope, tableIndex, index = 0) {
 
 		return data.rows;
 	} catch (error) {
-		return await fetchTable(account, table, scope, tableIndex, index + 1);
+		return await fetchTable(contract, table, scope, bounds, tableIndex, index + 1);
 	}
 }
 
 async function fetchTools(account) {
-	const tools = await fetchTable(null, "stakedassets", account, 1);
+	const tools = await fetchTable("spacecraftxc", "stakedassets", account, null, 1);
 	return _.orderBy(tools, "template_id");
 }
 
 async function fetchAccount(account) {
-	return await fetchTable(account, "users", "spacecraftxc", 1);
+	return await fetchTable("spacecraftxc", "users", "spacecraftxc", account, 1);
 }
 
 function makeToolClaimAction(account, toolId) {
@@ -183,6 +188,15 @@ function makeWithdrawAction(account, quantity) {
 		name: "withdraw",
 		authorization: [{ actor: account, permission: "active" }],
 		data: { owner: account, quantity },
+	};
+}
+
+function makeDepositAction(account, quantity) {
+	return {
+		account: "spacecraftxt",
+		name: "transfer",
+		authorization: [{ actor: account, permission: "active" }],
+		data: { from: account, to: "spacecraftxc", quantity, memo: "deposit" },
 	};
 }
 
@@ -415,7 +429,80 @@ async function withdrawTokens(account, privKey) {
 	await transact({ account, privKeys: [privKey], actions });
 }
 
+async function depositTokens(account, privKey) {
+	if (!Configs.autoDeposit) {
+		return;
+	}
+
+	shuffleEndpoints();
+
+	const { DELAY_MIN, DELAY_MAX } = process.env;
+	const delayMin = parseFloat(DELAY_MIN) || 4;
+	const delayMax = parseFloat(DELAY_MAX) || 10;
+
+	console.log(`Fetching account ${cyan(account)}`);
+	const [accountInfo] = await fetchAccount(account);
+
+	if (!accountInfo) {
+		console.log(`${red("Error")} Account ${cyan(account)} not found`);
+		return;
+	}
+
+	console.log(`Fetching balances for account ${cyan(account)}`);
+	const rows = await fetchTable("spacecraftxt", "accounts", account, null, 1);
+	const rawBalances = rows.map(r => r.balance);
+	const accountBalances = rawBalances
+		.map(t => t.split(/\s+/gi))
+		.map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }));
+
+	const { cosmic_dust, dark_matter, waves } = accountInfo;
+	const gameBalances = [cosmic_dust, dark_matter, waves].map(b => b.quantity);
+
+	const depositables = gameBalances
+		.map(t => t.split(/\s+/gi))
+		.map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }))
+		.filter(token => {
+			const threshold = Configs.depositThresholds.find(t => t.symbol == token.symbol);
+			return threshold && token.amount < threshold.amount;
+		})
+		.map(({ symbol }) => {
+			return accountBalances.find(t => t.symbol == symbol);
+		})
+		.filter(b => !!b)
+		.map(({ amount, symbol }) => {
+			const max = Configs.maxDeposit.find(t => t.symbol == symbol);
+			return { amount: Math.min(amount, (max && max.amount) || Infinity), symbol };
+		})
+		.filter(({ amount }) => {
+			return Math.floor(amount) > 0;
+		})
+		.map(
+			({ amount, symbol }) =>
+				`${Math.floor(amount).toLocaleString("en", {
+					useGrouping: false,
+					minimumFractionDigits: 4,
+					maximumFractionDigits: 4,
+				})} ${symbol}`
+		);
+
+	if (!depositables.length) {
+		console.log(`${cyan("Info")}`, `No token deposit is possible`, yellow(gameBalances.join(", ")));
+		return;
+	}
+
+	const delay = _.round(_.random(delayMin, delayMax, true), 2);
+
+	console.log(`\tDepositing ${yellow(depositables.join(", "))}`, `(after a ${Math.round(delay)}s delay)`);
+	const actions = depositables.map(quantity => makeDepositAction(account, quantity));
+
+	await waitFor(delay);
+	await transact({ account, privKeys: [privKey], actions });
+}
+
 async function runTasks(account, privKey) {
+	await depositTokens(account, privKey);
+	console.log(); // just for clarity
+
 	await recoverEnergy(account, privKey);
 	console.log(); // just for clarity
 
@@ -464,7 +551,10 @@ async function runAccounts(accounts) {
 		})
 		.filter(acc => !!acc);
 
-	const { CHECK_INTERVAL, AUTO_WITHDRAW, WITHDRAW_THRESHOLD, MAX_WITHDRAW } = process.env;
+	const { CHECK_INTERVAL } = process.env;
+	const { AUTO_WITHDRAW, WITHDRAW_THRESHOLD, MAX_WITHDRAW } = process.env;
+	const { AUTO_DEPOSIT, DEPOSIT_THRESHOLD, MAX_DEPOSIT } = process.env;
+
 	const interval = parseInt(CHECK_INTERVAL) || 15;
 
 	Configs.autoWithdraw = AUTO_WITHDRAW == 1;
@@ -475,6 +565,19 @@ async function runAccounts(accounts) {
 		.map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }));
 
 	Configs.maxWithdraw = MAX_WITHDRAW.split(",")
+		.map(t => t.trim())
+		.filter(t => t.length)
+		.map(t => t.split(/\s+/gi))
+		.map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }));
+
+	Configs.autoDeposit = AUTO_DEPOSIT == 1;
+	Configs.depositThresholds = DEPOSIT_THRESHOLD.split(",")
+		.map(t => t.trim())
+		.filter(t => t.length)
+		.map(t => t.split(/\s+/gi))
+		.map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }));
+
+	Configs.maxDeposit = MAX_DEPOSIT.split(",")
 		.map(t => t.trim())
 		.filter(t => t.length)
 		.map(t => t.split(/\s+/gi))
