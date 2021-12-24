@@ -158,7 +158,7 @@ async function fetchTable(contract, table, scope, bounds, tableIndex, index = 0)
 
 async function fetchTools(account) {
 	const tools = await fetchTable("spacecraftxc", "stakedassets", account, null, 1);
-	return _.orderBy(tools, ["template_id", r => new Date(r.last_claim_time).getTime()], ["asc", "asc"]);
+	return _.orderBy(tools, ["template_id", r => new Date(r.ready_at).getTime()], ["asc", "asc"]);
 }
 
 async function fetchAccount(account) {
@@ -350,7 +350,7 @@ async function useTools(account, privKey) {
 
 	const actions = tools
 		.map(tool => {
-			const nextClaim = new Date(new Date(`${tool.last_claim_time}Z`).getTime() + 3.6e6);
+			const nextClaim = new Date(new Date(`${tool.ready_at}Z`).getTime() + 3.6e6);
 			if (nextClaim.getTime() > Date.now()) {
 				console.log(
 					`\t${yellow("Notice")} Tool`,
@@ -491,7 +491,7 @@ async function depositTokens(account, privKey) {
 	const elligibleTokens = meetThreshold
 		.map(({ symbol }) => accountBalances.find(t => t.symbol == symbol))
 		.filter(b => !!b)
-		.filter(({ amount }) => Math.floor(amount) > 0);
+		.filter(({ amount }) => amount > 0);
 
 	if (!elligibleTokens.length) {
 		console.log(`${yellow("Warning")}`, `No token deposit is possible`, yellow(rawAccountBalances.join(", ")));
@@ -505,7 +505,7 @@ async function depositTokens(account, privKey) {
 		})
 		.map(
 			({ amount, symbol }) =>
-				`${Math.floor(amount).toLocaleString("en", {
+				`${amount.toLocaleString("en", {
 					useGrouping: false,
 					minimumFractionDigits: 4,
 					maximumFractionDigits: 4,
