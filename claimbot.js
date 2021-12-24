@@ -350,7 +350,7 @@ async function useTools(account, privKey) {
 
 	const actions = tools
 		.map(tool => {
-			const nextClaim = new Date(new Date(`${tool.ready_at}Z`).getTime() + 3.6e6);
+			const nextClaim = new Date(`${tool.ready_at}Z`);
 			if (nextClaim.getTime() > Date.now()) {
 				console.log(
 					`\t${yellow("Notice")} Tool`,
