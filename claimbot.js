@@ -361,7 +361,7 @@ async function useTools(account, privKey) {
 				return null;
 			}
 
-			if (tool.strength_usage >= tool.strength) {
+			if (tool.strength_usage > tool.strength) {
 				console.log(
 					`\t${yellow("Warning")} Tool`,
 					`(${yellow(tool.asset_id)})`,
