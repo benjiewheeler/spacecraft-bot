@@ -229,14 +229,14 @@ async function recoverEnergy(account, privKey) {
 	}
 
 	const { energy, waves } = accountInfo;
-	const percentage = 100 * (energy / 1000);
+	const percentage = 100 * (energy / 1500);
 
 	if (percentage > threshold) {
 		console.log(
 			`${yellow("Info")}`,
 			`Account ${cyan(account)} doesn't need to recover`,
-			`(energy ${yellow(energy)} / ${yellow(1000)})`,
-			magenta(`(${_.round((energy / 1000) * 100, 2)}%)`)
+			`(energy ${yellow(energy)} / ${yellow(1500)})`,
+			magenta(`(${_.round((energy / 1500) * 100, 2)}%)`)
 		);
 		return;
 	}
@@ -248,14 +248,14 @@ async function recoverEnergy(account, privKey) {
 		return;
 	}
 
-	const wavesNeeded = Math.min(Math.floor((1000 - energy) / 10), Math.floor(Math.min(maxConsumption, wavesBalance)));
+	const wavesNeeded = Math.min(Math.floor((1500 - energy) / 10), Math.floor(Math.min(maxConsumption, wavesBalance)));
 	const delay = _.round(_.random(delayMin, delayMax, true), 2);
 
 	console.log(
 		`\tRecovering ${yellow(wavesNeeded * 10)} energy`,
 		`by consuming ${yellow(wavesNeeded)} Waves`,
-		`(energy ${yellow(energy)} / ${yellow(1000)})`,
-		magenta(`(${_.round((energy / 1000) * 100, 2)}%)`),
+		`(energy ${yellow(energy)} / ${yellow(1500)})`,
+		magenta(`(${_.round((energy / 1500) * 100, 2)}%)`),
 		`(after a ${Math.round(delay)}s delay)`
 	);
 	const actions = [makeRecoverAction(account, wavesNeeded)];
